@@ -1,0 +1,15 @@
+// SA-facing ABI for the cross-platform terminal host.
+// Status: 0 ok, 1 unknown_command, 2 io_error, 3 timeout, 4 unsupported,
+// 5 failed, 6 version_mismatch, 7 invalid_descriptor.
+// Modes: 0 cooked, 1 raw, 2 alternate_screen, 3 mouse_tracking.
+// Event kinds: 0 none, 1 byte, 2 resize, 3 eof.
+
+@extern sa_tui_open(&out_handle: ptr) -> u32
+@extern sa_tui_close(^handle: ptr) -> u32
+@extern sa_tui_size(handle: ptr, &out_rows: ptr, &out_cols: ptr) -> u32
+@extern sa_tui_write(handle: ptr, &bytes: ptr, len: u64) -> u32
+@extern sa_tui_flush(handle: ptr) -> u32
+@extern sa_tui_set_mode(handle: ptr, mode: u32) -> u32
+@extern sa_tui_read_event(handle: ptr, timeout_ms: u32, &out_kind: ptr, &out_code: ptr) -> u32
+
+

@@ -1,0 +1,20 @@
+{
+  "schema": "sa.plugin/1",
+  "name": "tui",
+  "version": "0.1.0",
+  "source": { "type": "local", "path": "." },
+  "abi": { "plugin": 1, "saasm": ">=0.4.0" },
+  "artifacts": {
+    "linux-x86_64": { "path": "zig-out/lib/libtui.so" },
+    "windows-x86_64": { "path": "zig-out/bin/tui.dll" }
+  },
+  "interfaces": { "sai": { "path": "tui.sai" } },
+  "skills": ["tui.terminal", "tui.input", "tui.ansi"],
+  "permissions": {
+    "fs": [],
+    "net": [],
+    "env": ["TERM", "COLORTERM", "TERM_PROGRAM", "WT_SESSION", "TMUX"],
+    "process": { "spawn": false, "exec": [] }
+  },
+  "dependencies": {}
+}
