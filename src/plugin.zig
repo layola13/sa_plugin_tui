@@ -95,10 +95,6 @@ fn emitControl(handle: *TuiHandle, bytes: []const u8) !void {
     try writeAll(handle, bytes);
 }
 
-fn syncOutput(handle: *TuiHandle) void {
-    if (builtin.os.tag != .windows) _ = handle.stdout.sync() catch {};
-}
-
 pub export fn sa_tui_open(out_handle: *?*anyopaque) callconv(.c) u32 {
     const allocator = std.heap.c_allocator;
     const handle = allocator.create(TuiHandle) catch return @intFromEnum(Status.failed);
@@ -114,7 +110,6 @@ pub export fn sa_tui_close(handle_value: ?*anyopaque) callconv(.c) u32 {
     if (handle.raw_mode) _ = setRawMode(handle, false) catch {};
     if (handle.alternate_screen) _ = emitControl(handle, "\x1b[?1049l\x1b[?25h") catch {};
     if (handle.mouse_tracking) _ = emitControl(handle, "\x1b[?1000l\x1b[?1006l") catch {};
-    syncOutput(handle);
     allocator.destroy(handle);
     return @intFromEnum(Status.ok);
 }
@@ -134,8 +129,7 @@ pub export fn sa_tui_write(handle_value: ?*anyopaque, bytes: [*]const u8, len: u
 }
 
 pub export fn sa_tui_flush(handle_value: ?*anyopaque) callconv(.c) u32 {
-    const handle = handleFromOpaque(handle_value) orelse return @intFromEnum(Status.invalid_descriptor);
-    syncOutput(handle);
+    _ = handle_value;
     return @intFromEnum(Status.ok);
 }
 
