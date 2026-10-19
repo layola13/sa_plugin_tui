@@ -8,6 +8,11 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const sio_module = b.createModule(.{
+        .root_source_file = b.path("../sci/src/sa_io.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     const root_module = b.createModule(.{
         .root_source_file = b.path("src/plugin.zig"),
         .target = target,
@@ -15,17 +20,21 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
     root_module.addImport("plugin_api", plugin_api);
+    root_module.addImport("sio", sio_module);
     const lib = b.addLibrary(.{
         .name = "tui",
         .root_module = root_module,
         .linkage = .dynamic,
     });
     b.installArtifact(lib);
-    const tests = b.addTest(.{
+    const test_module = b.createModule(.{
         .root_source_file = b.path("tests/plugin_test.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
+    });
+    const tests = b.addTest(.{
+        .root_module = test_module,
     });
     tests.root_module.addImport("plugin", root_module);
     tests.root_module.addImport("plugin_api", plugin_api);

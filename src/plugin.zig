@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const plugin_api = @import("plugin_api");
+const sio = @import("sio");
 
 const Status = plugin_api.AbiStatus;
 
@@ -19,8 +20,8 @@ pub const EventKind = enum(u32) {
 };
 
 const TuiHandle = struct {
-    stdin: std.fs.File,
-    stdout: std.fs.File,
+    stdin: sio.File,
+    stdout: sio.File,
     rows: u16 = 24,
     cols: u16 = 80,
     raw_mode: bool = false,
@@ -38,7 +39,7 @@ fn handleFromOpaque(value: ?*anyopaque) ?*TuiHandle {
 fn querySize(handle: *TuiHandle) void {
     if (builtin.os.tag == .windows) {
         var info: std.os.windows.CONSOLE_SCREEN_BUFFER_INFO = undefined;
-        if (std.os.windows.kernel32.GetConsoleScreenBufferInfo(handle.stdout.handle, &info) != 0) {
+        if (std.os.windows.kernel32.GetConsoleScreenBufferInfo(handle.stdout.inner.handle, &info) != 0) {
             const width = @as(i32, info.srWindow.Right) - @as(i32, info.srWindow.Left) + 1;
             const height = @as(i32, info.srWindow.Bottom) - @as(i32, info.srWindow.Top) + 1;
             if (width > 0 and height > 0) {
@@ -49,7 +50,7 @@ fn querySize(handle: *TuiHandle) void {
         return;
     }
     var ws: std.posix.winsize = .{ .row = 0, .col = 0, .xpixel = 0, .ypixel = 0 };
-    const rc = std.c.ioctl(handle.stdout.handle, std.c.T.IOCGWINSZ, &ws);
+    const rc = std.c.ioctl(handle.stdout.inner.handle, std.c.T.IOCGWINSZ, &ws);
     if (rc == 0 and ws.row != 0 and ws.col != 0) {
         handle.rows = ws.row;
         handle.cols = ws.col;
@@ -59,28 +60,28 @@ fn querySize(handle: *TuiHandle) void {
 fn setRawMode(handle: *TuiHandle, enabled: bool) !void {
     if (builtin.os.tag == .windows) {
         var mode: u32 = undefined;
-        if (std.os.windows.kernel32.GetConsoleMode(handle.stdin.handle, &mode) == 0) return error.NotATerminal;
+        if (std.os.windows.kernel32.GetConsoleMode(handle.stdin.inner.handle, &mode) == 0) return error.NotATerminal;
         if (enabled) {
             if (handle.windows_saved_mode == null) handle.windows_saved_mode = mode;
             const raw_mode = mode & ~@as(u32, 0x7);
-            if (std.os.windows.kernel32.SetConsoleMode(handle.stdin.handle, raw_mode) == 0) return error.NotATerminal;
+            if (std.os.windows.kernel32.SetConsoleMode(handle.stdin.inner.handle, raw_mode) == 0) return error.NotATerminal;
         } else if (handle.windows_saved_mode) |saved| {
-            if (std.os.windows.kernel32.SetConsoleMode(handle.stdin.handle, saved) == 0) return error.NotATerminal;
+            if (std.os.windows.kernel32.SetConsoleMode(handle.stdin.inner.handle, saved) == 0) return error.NotATerminal;
             handle.windows_saved_mode = null;
         }
         return;
     }
     if (enabled) {
         if (handle.unix_saved_termios == null) {
-            const original = try std.posix.tcgetattr(handle.stdin.handle);
+            const original = try std.posix.tcgetattr(handle.stdin.inner.handle);
             handle.unix_saved_termios = original;
             var raw = original;
             raw.lflag.ICANON = false;
             raw.lflag.ECHO = false;
-            try std.posix.tcsetattr(handle.stdin.handle, .NOW, raw);
+            try std.posix.tcsetattr(handle.stdin.inner.handle, .NOW, raw);
         }
     } else if (handle.unix_saved_termios) |saved| {
-        try std.posix.tcsetattr(handle.stdin.handle, .NOW, saved);
+        try std.posix.tcsetattr(handle.stdin.inner.handle, .NOW, saved);
         handle.unix_saved_termios = null;
     }
 }
@@ -90,7 +91,7 @@ fn writeAll(handle: *TuiHandle, bytes: []const u8) !void {
 }
 
 fn emitControl(handle: *TuiHandle, bytes: []const u8) !void {
-    if (!handle.stdout.supportsAnsiEscapeCodes()) return;
+    if (std.c.isatty(handle.stdout.inner.handle) == 0) return;
     try writeAll(handle, bytes);
 }
 
@@ -101,7 +102,7 @@ fn syncOutput(handle: *TuiHandle) void {
 pub export fn sa_tui_open(out_handle: *?*anyopaque) callconv(.c) u32 {
     const allocator = std.heap.c_allocator;
     const handle = allocator.create(TuiHandle) catch return @intFromEnum(Status.failed);
-    handle.* = .{ .stdin = std.io.getStdIn(), .stdout = std.io.getStdOut() };
+    handle.* = .{ .stdin = sio.getStdIn(), .stdout = sio.getStdOut() };
     querySize(handle);
     out_handle.* = handle;
     return @intFromEnum(Status.ok);
@@ -140,7 +141,7 @@ pub export fn sa_tui_flush(handle_value: ?*anyopaque) callconv(.c) u32 {
 
 pub export fn sa_tui_set_mode(handle_value: ?*anyopaque, mode_value: u32) callconv(.c) u32 {
     const handle = handleFromOpaque(handle_value) orelse return @intFromEnum(Status.invalid_descriptor);
-    const mode: Mode = std.meta.intToEnum(Mode, mode_value) catch return @intFromEnum(Status.invalid_descriptor);
+    const mode: Mode = std.enums.fromInt(Mode, mode_value) orelse return @intFromEnum(Status.invalid_descriptor);
     switch (mode) {
         .cooked => {
             if (handle.alternate_screen) _ = emitControl(handle, "\x1b[?1049l\x1b[?25h") catch return @intFromEnum(Status.failed);
@@ -175,7 +176,7 @@ pub export fn sa_tui_read_event(
     const handle = handleFromOpaque(handle_value) orelse return @intFromEnum(Status.invalid_descriptor);
     if (timeout_ms > 0) {
         if (builtin.os.tag == .windows) {
-            const wait_result = std.os.windows.kernel32.WaitForSingleObject(handle.stdin.handle, timeout_ms);
+            const wait_result = std.os.windows.kernel32.WaitForSingleObject(handle.stdin.inner.handle, timeout_ms);
             if (wait_result == std.os.windows.WAIT_TIMEOUT) {
                 out_kind.* = @intFromEnum(EventKind.none);
                 out_code.* = 0;
@@ -183,7 +184,7 @@ pub export fn sa_tui_read_event(
             }
             if (wait_result != std.os.windows.WAIT_OBJECT_0) return @intFromEnum(Status.io_error);
         } else {
-            var poll_fds = [_]std.posix.pollfd{.{ .fd = handle.stdin.handle, .events = std.posix.POLL.IN, .revents = 0 }};
+            var poll_fds = [_]std.posix.pollfd{.{ .fd = handle.stdin.inner.handle, .events = std.posix.POLL.IN, .revents = 0 }};
             const ready = std.posix.poll(&poll_fds, @intCast(@min(timeout_ms, std.math.maxInt(i32)))) catch return @intFromEnum(Status.io_error);
             if (ready == 0) {
                 out_kind.* = @intFromEnum(EventKind.none);
