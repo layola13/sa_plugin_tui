@@ -11,8 +11,13 @@
   "interfaces": { "sai": { "path": "tui.sai" } },
   "skills": ["tui.terminal", "tui.input", "tui.ansi"],
   "permissions": {
-    "fs": [],
-    "net": [],
+    "fs": [
+      { "op": "read", "path": "$PROJECT/**" }
+    ],
+    "net": [
+      { "url": "http://localhost", "methods": ["GET"] },
+      { "url": "http://127.0.0.1", "methods": ["GET"] }
+    ],
     "env": ["TERM", "COLORTERM", "TERM_PROGRAM", "WT_SESSION", "TMUX"],
     "process": { "spawn": false, "exec": [] }
   },
